@@ -17,34 +17,48 @@ class DocumentLoader:
 
     def __init__(self, path: Union[str, List[str]]):
         self.path = path
+        print(f"🔍 DocumentLoader initialized with path: {self.path}")
 
     async def load(self) -> list:
         tasks = []
+        print(f"📁 Starting document loading process...")
+        
         if isinstance(self.path, list):
+            print(f"📋 Processing list of paths: {self.path}")
             for file_path in self.path:
+                print(f"🔍 Checking file path: {file_path}")
                 if os.path.isfile(file_path):  # Ensure it's a valid file
+                    print(f"✅ File exists: {file_path}")
                     filename = os.path.basename(file_path)
                     file_name, file_extension_with_dot = os.path.splitext(filename)
                     file_extension = file_extension_with_dot.strip(".").lower()
+                    print(f"📄 File extension: {file_extension}")
                     tasks.append(self._load_document(file_path, file_extension))
+                else:
+                    print(f"❌ File does not exist: {file_path}")
                     
         elif isinstance(self.path, (str, bytes, os.PathLike)):
+            print(f"📂 Processing directory path: {self.path}")
+            if not os.path.exists(self.path):
+                print(f"❌ Directory does not exist: {self.path}")
+                raise ValueError(f"Directory does not exist: {self.path}")
+                
             for root, dirs, files in os.walk(self.path):
+                print(f"🔍 Walking directory: {root}")
+                print(f"📁 Subdirectories: {dirs}")
+                print(f"📄 Files found: {files}")
                 for file in files:
                     file_path = os.path.join(root, file)
+                    print(f"📄 Processing file: {file_path}")
                     file_name, file_extension_with_dot = os.path.splitext(file)
                     file_extension = file_extension_with_dot.strip(".").lower()
+                    print(f"📄 File extension: {file_extension}")
                     tasks.append(self._load_document(file_path, file_extension))
                     
         else:
             raise ValueError("Invalid type for path. Expected str, bytes, os.PathLike, or list thereof.")
 
-        # for root, dirs, files in os.walk(self.path):
-        #     for file in files:
-        #         file_path = os.path.join(root, file)
-        #         file_name, file_extension_with_dot = os.path.splitext(file_path)
-        #         file_extension = file_extension_with_dot.strip(".")
-        #         tasks.append(self._load_document(file_path, file_extension))
+        print(f"🔄 Created {len(tasks)} tasks for document loading")
 
         docs = []
         for pages in await asyncio.gather(*tasks):
@@ -55,13 +69,17 @@ class DocumentLoader:
                         "url": os.path.basename(page.metadata['source'])
                     })
                     
+        print(f"📊 Loaded {len(docs)} documents successfully")
+        
         if not docs:
+            print(f"❌ No documents were loaded successfully!")
             raise ValueError("🤷 Failed to load any documents!")
 
         return docs
 
     async def _load_document(self, file_path: str, file_extension: str) -> list:
         ret_data = []
+        print(f"🔄 Attempting to load document: {file_path} (extension: {file_extension})")
         try:
             loader_dict = {
                 "pdf": PyMuPDFLoader(file_path),
@@ -79,14 +97,18 @@ class DocumentLoader:
 
             loader = loader_dict.get(file_extension, None)
             if loader:
+                print(f"✅ Found loader for extension: {file_extension}")
                 try:
                     ret_data = loader.load()
+                    print(f"✅ Successfully loaded {len(ret_data)} pages from {file_path}")
                 except Exception as e:
-                    print(f"Failed to load HTML document : {file_path}")
-                    print(e)
+                    print(f"❌ Failed to load HTML document : {file_path}")
+                    print(f"❌ Error: {e}")
+            else:
+                print(f"❌ No loader found for extension: {file_extension}")
 
         except Exception as e:
-            print(f"Failed to load document : {file_path}")
-            print(e)
+            print(f"❌ Failed to load document : {file_path}")
+            print(f"❌ Error: {e}")
 
         return ret_data

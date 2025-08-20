@@ -8,6 +8,8 @@ from ..document import DocumentLoader, OnlineDocumentLoader, LangChainDocumentLo
 from ..utils.enum import ReportSource, ReportType
 from ..utils.logging_config import get_json_handler
 from ..actions.agent_creator import choose_agent
+from ..skills.csv_excel_analyzer import agent
+from langchain_core.messages import HumanMessage, AIMessage
 
 
 class ResearchConductor:
@@ -21,6 +23,8 @@ class ResearchConductor:
         self._mcp_results_cache = None
         # Track MCP query count for balanced mode
         self._mcp_query_count = 0
+        self.csv_agent = agent
+        self.csv_messages = []
 
     async def plan_research(self, query, query_domains=None):
         """Gets the sub-queries from the query
@@ -127,22 +131,18 @@ class ResearchConductor:
             self.logger.info("Using web search with all configured retrievers")
             research_data = await self._get_context_by_web_search(self.researcher.query, [], self.researcher.query_domains)
         elif self.researcher.report_source == ReportSource.Local.value:
-            self.logger.info("Using local search")
-            document_data = await DocumentLoader(self.researcher.cfg.doc_path).load()
-            self.logger.info(f"Loaded {len(document_data)} documents")
-            if self.researcher.vector_store:
-                self.researcher.vector_store.load(document_data)
-
-            research_data = await self._get_context_by_web_search(self.researcher.query, document_data, self.researcher.query_domains)
+            self.logger.info("Using CSV agent for local search")
+            self.csv_messages.append(HumanMessage(content=self.researcher.query))
+            research_data = await self.csv_agent.ainvoke({"messages": self.csv_messages})
+            research_data = research_data["messages"][-1].content
+            self.csv_messages.append(AIMessage(content=research_data))
         # Hybrid search including both local documents and web sources
         elif self.researcher.report_source == ReportSource.Hybrid.value:
-            if self.researcher.document_urls:
-                document_data = await OnlineDocumentLoader(self.researcher.document_urls).load()
-            else:
-                document_data = await DocumentLoader(self.researcher.cfg.doc_path).load()
-            if self.researcher.vector_store:
-                self.researcher.vector_store.load(document_data)
-            docs_context = await self._get_context_by_web_search(self.researcher.query, document_data, self.researcher.query_domains)
+            self.logger.info("Using CSV agent for hybrid search")
+            self.csv_messages.append(HumanMessage(content=self.researcher.query))
+            docs_context = await self.csv_agent.ainvoke({"messages": self.csv_messages})
+            docs_context = docs_context["messages"][-1].content
+            self.csv_messages.append(AIMessage(content=docs_context))
             web_context = await self._get_context_by_web_search(self.researcher.query, [], self.researcher.query_domains)
             research_data = self.researcher.prompt_family.join_local_web_documents(docs_context, web_context)
         elif self.researcher.report_source == ReportSource.Azure.value:
